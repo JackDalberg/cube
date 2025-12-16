@@ -6,6 +6,7 @@ import (
 	"cube/task"
 	"cube/worker"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/golang-collections/collections/queue"
@@ -61,4 +62,45 @@ func main() {
 		Role:   "worker",
 	}
 	fmt.Printf("node: %v\n", n)
+
+	fmt.Printf("create a test container\n")
+	dockerTask, createResult := createContainer()
+	if createResult.Error != nil {
+		log.Fatal(createResult.Error)
+	}
+
+	time.Sleep(5 * time.Second)
+	fmt.Printf("stopping container %s\n", createResult.ContainerId)
+	_ = stopContainer(dockerTask, createResult.ContainerId)
+}
+
+func createContainer() (*task.Docker, *task.DockerResult) {
+	c := task.Config{
+		Name:  "test-container-1",
+		Image: "postgres:13",
+		Env: []string{
+			"POSTGRES_USER=cube",
+			"POSTGRES_PASSWORD=secret",
+		},
+	}
+	d := task.NewDocker(&c)
+
+	result := d.Run()
+	if result.Error != nil {
+		fmt.Printf("%v\n", result.Error)
+		return nil, nil
+	}
+
+	fmt.Printf("Container %s is running with config %v\n", result.ContainerId, c)
+	return d, &result
+}
+
+func stopContainer(d *task.Docker, id string) *task.DockerResult {
+	result := d.Stop(id)
+	if result.Error != nil {
+		fmt.Printf("%v\n", result.Error)
+		return nil
+	}
+	fmt.Printf("Container %s has been stopped and removed\n", result.ContainerId)
+	return &result
 }
