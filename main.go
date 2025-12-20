@@ -4,6 +4,9 @@ import (
 	"cube/task"
 	"cube/worker"
 	"fmt"
+	"log"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-collections/collections/queue"
@@ -11,34 +14,31 @@ import (
 )
 
 func main() {
-	t := task.Task{
-		ID:    uuid.New(),
-		Name:  "test-container-1",
-		State: task.Scheduled,
-		Image: "strm/helloworld-http",
-	}
+	host := os.Getenv("CUBE_HOST")
+	port, _ := strconv.Atoi(os.Getenv("CUBE_PORT"))
+	fmt.Println("Starting cube workle")
+
 	w := worker.Worker{
-		Name:  "worker-1",
 		Queue: *queue.New(),
 		Db:    make(map[uuid.UUID]*task.Task),
 	}
 
-	fmt.Println("starting task")
-	w.AddTask(t)
-	result := w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
-	}
+	api := worker.Api{Address: host, Port: port, Worker: &w}
+	go runTasks(&w)
+	api.Start()
+}
 
-	t.ContainerID = result.ContainerId
-	fmt.Printf("task %s is running in container %s\n", t.ID, t.ContainerID)
-	fmt.Println("sleeping...")
-	time.Sleep(30 * time.Second)
-	fmt.Printf("stopping task %s\n", t.ID)
-	t.State = task.Completed
-	w.AddTask(t)
-	result = w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
+func runTasks(w *worker.Worker) {
+	for {
+		if w.Queue.Len() != 0 {
+			result := w.RunTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+		} else {
+			log.Print("No tasks to process rn\n")
+		}
+		log.Print("Sleeping for 10 secs\n")
+		time.Sleep(10 * time.Second)
 	}
 }

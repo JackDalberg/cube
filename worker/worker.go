@@ -87,3 +87,11 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 func (w *Worker) AddTask(t task.Task) {
 	w.Queue.Enqueue(t)
 }
+
+func (w *Worker) GetTasks() []task.Task {
+	var allTasks []task.Task
+	for _, v := range w.Db {
+		allTasks = append(allTasks, *v)
+	}
+	return allTasks
+}
