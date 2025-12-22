@@ -8,6 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 )
 
+require github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
+
 require (
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

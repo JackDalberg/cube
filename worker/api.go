@@ -27,6 +27,7 @@ func (a *Api) initRouter() {
 	a.Router.HandleFunc("GET /tasks", a.GetTaskHandler)
 	a.Router.HandleFunc("POST /tasks", a.StartTaskHandler)
 	a.Router.HandleFunc("DELETE /tasks/{taskID}", a.StopTaskHandler)
+	a.Router.HandleFunc("GET /stats", a.GetStatsHandler)
 }
 
 func (a *Api) Start() {
@@ -58,7 +59,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
-	taskID := r.URL.Query().Get("taskID")
+	taskID := r.PathValue("taskID")
 	if taskID == "" {
 		log.Printf("No taskID passed in request\n")
 		w.WriteHeader(400)
@@ -83,4 +84,10 @@ func (a *Api) GetTaskHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(a.Worker.GetTasks())
+}
+
+func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	json.NewEncoder(w).Encode(a.Worker.Stats)
 }
