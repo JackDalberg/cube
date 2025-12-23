@@ -28,7 +28,22 @@ func (w *Worker) CollectStats() {
 	}
 }
 
-func (w *Worker) RunTask() task.DockerResult {
+func (w *Worker) RunTasks() {
+	for {
+		if w.Queue.Len() != 0 {
+			result := w.runTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+		} else {
+			log.Print("No tasks to process rn\n")
+		}
+		log.Print("Sleeping for 10 secs\n")
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (w *Worker) runTask() task.DockerResult {
 	t := w.Queue.Dequeue()
 	if t == nil {
 		log.Printf("No tasks in the queue\n")
