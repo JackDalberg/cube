@@ -32,7 +32,8 @@ func (a *Api) initRouter() {
 
 func (a *Api) Start() {
 	a.initRouter()
-	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+	log.Printf("Error starting manager api: %v", err)
 }
 
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {

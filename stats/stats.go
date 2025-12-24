@@ -1,4 +1,4 @@
-package worker
+package stats
 
 import (
 	"log"
@@ -26,8 +26,8 @@ func (s *Stats) MemUsedKb() uint64 {
 	return s.MemStats.MemTotal - s.MemStats.MemAvailable
 }
 
-func (s *Stats) MemUsedPercentage() uint64 {
-	return s.MemStats.MemAvailable / s.MemStats.MemTotal
+func (s *Stats) MemUsedPercentage() float64 {
+	return float64(s.MemStats.MemAvailable) / float64(s.MemStats.MemTotal)
 }
 
 func (s *Stats) DiskTotal() uint64 {
