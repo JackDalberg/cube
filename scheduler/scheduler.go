@@ -74,16 +74,21 @@ func (e *Epvm) Score(t task.Task, nodes []*node.Node) map[string]float64 {
 	maxJobs := 4.0
 
 	for _, node := range nodes {
+		stats, err := node.GetStats()
+		if err != nil || stats == nil {
+			log.Printf("Error getting stats for node %v: %v\n", node, err)
+			continue
+		}
 		cpuUsage, err := calculateCpuUsage(node)
 		if err != nil {
 			log.Printf("Error calculating cpu usage for node %s: %v\n", node.Name, err)
-			continue
+			cpuUsage = 1.0
 		}
 		// This asumes the max load of any node is 80%
 		cpuLoad := cpuUsage / math.Pow(2.0, 0.8)
 
-		memPercentWithoutTask := node.Stats.MemUsedPercentage()
-		memPercentWithTask := memPercentWithoutTask - (float64(t.Memory) / float64(node.Stats.MemTotalKb()))
+		memPercentWithoutTask := stats.MemUsedPercentage()
+		memPercentWithTask := memPercentWithoutTask - (float64(t.Memory) / float64(stats.MemTotalKb()))
 
 		// The final cpuLoad term was not in the original EPVM but makes sense to spread work based on cpu load
 		marginalCost := math.Pow(LIEB, memPercentWithTask) - math.Pow(LIEB, memPercentWithoutTask) +

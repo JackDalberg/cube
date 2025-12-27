@@ -27,6 +27,9 @@ func (s *Stats) MemUsedKb() uint64 {
 }
 
 func (s *Stats) MemUsedPercentage() float64 {
+	if s.MemStats.MemTotal == 0 {
+		return 0.0
+	}
 	return float64(s.MemStats.MemAvailable) / float64(s.MemStats.MemTotal)
 }
 
@@ -48,7 +51,7 @@ func (s *Stats) CpuUsage() float64 {
 	total := idle + nonIdle
 
 	if total == 0 {
-		return 0.00
+		return 0.0
 	}
 
 	return float64(nonIdle) / float64(total)

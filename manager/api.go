@@ -68,9 +68,16 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tID, _ := uuid.Parse(taskID)
-	taskToStop, ok := a.Manager.TaskDb[tID]
+	result, err := a.Manager.TaskDb.Get(tID.String())
+	if err != nil {
+		log.Printf("No task with ID %v found: %v\n", tID, err)
+		w.WriteHeader(404)
+		return
+	}
+
+	taskToStop, ok := result.(*task.Task)
 	if !ok {
-		log.Printf("No task with ID %v found\n", tID)
+		log.Printf("Unable to convert %v to task.Task type\n", result)
 		w.WriteHeader(404)
 		return
 	}

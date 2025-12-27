@@ -2,6 +2,7 @@ package worker
 
 import (
 	"cube/stats"
+	"cube/store"
 	"cube/task"
 	"errors"
 	"fmt"
@@ -9,15 +10,36 @@ import (
 	"time"
 
 	"github.com/golang-collections/collections/queue"
-	"github.com/google/uuid"
 )
 
 type Worker struct {
 	Name      string
 	Queue     queue.Queue
-	Db        map[uuid.UUID]*task.Task
+	Db        store.Store
 	TaskCount int
 	Stats     *stats.Stats
+}
+
+func New(name, taskDBType string) *Worker {
+	var s store.Store
+	var err error
+	switch taskDBType {
+	case "memory":
+		s = store.NewInMemoryTaskStore()
+	case "bolt":
+		filename := fmt.Sprintf("%s_tasks.db", name)
+		s, err = store.NewBoltTaskStore(filename, "tasks", 0600)
+	default:
+		s = store.NewInMemoryTaskStore()
+	}
+	if err != nil {
+		log.Printf("Unable to create task store for worker %s: %v", name, err)
+	}
+	return &Worker{
+		Name:  name,
+		Queue: *queue.New(),
+		Db:    s,
+	}
 }
 
 func (w *Worker) CollectStats() {
@@ -52,11 +74,23 @@ func (w *Worker) runTask() task.DockerResult {
 	}
 	taskQueued := t.(task.Task)
 
-	taskPersisted := w.Db[taskQueued.ID]
+	res, err := w.Db.Get(taskQueued.ID.String())
+	if err != nil {
+		log.Printf("Unable to find task with ID %v\n", taskQueued.ID.String())
+		return task.DockerResult{Error: err}
+	}
+
+	taskPersisted, ok := res.(*task.Task)
+	if !ok {
+		log.Printf("Unable to convert %v to task.Task type\n", res)
+		return task.DockerResult{Error: nil}
+
+	}
 	if taskPersisted == nil {
 		taskPersisted = &taskQueued
-		w.Db[taskQueued.ID] = &taskQueued
+		w.Db.Put(taskQueued.ID.String(), &taskQueued)
 	}
+
 	var result task.DockerResult
 	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
 		switch taskQueued.State {
@@ -76,7 +110,7 @@ func (w *Worker) runTask() task.DockerResult {
 
 func (w *Worker) StartTask(t task.Task) task.DockerResult {
 	t.StartTime = time.Now().UTC()
-	w.Db[t.ID] = &t
+	w.Db.Put(t.ID.String(), &t)
 	config := task.NewConfig(&t)
 	d := task.NewDocker(config)
 	result := d.Run()
@@ -101,7 +135,7 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 	}
 	t.FinishTime = time.Now().UTC()
 	t.State = task.Completed
-	w.Db[t.ID] = &t
+	w.Db.Put(t.ID.String(), &t)
 	log.Printf("Stopped and removed container %v for task %v\n", t.ContainerID, t.ID)
 	return result
 }
@@ -112,7 +146,17 @@ func (w *Worker) AddTask(t task.Task) {
 
 func (w *Worker) GetTasks() []task.Task {
 	var allTasks []task.Task
-	for _, v := range w.Db {
+	result, err := w.Db.List()
+	if err != nil {
+		log.Printf("Error getting task list from taskDB: %v\n", err)
+		return nil
+	}
+	taskList, ok := result.([]*task.Task)
+	if !ok {
+		log.Printf("Unable to convert %v to []task.Task type\n", result)
+		return nil
+	}
+	for _, v := range taskList {
 		allTasks = append(allTasks, *v)
 	}
 	return allTasks
@@ -134,7 +178,17 @@ func (w *Worker) UpdateTasks() {
 }
 
 func (w *Worker) updateTasks() {
-	for id, t := range w.Db {
+	result, err := w.Db.List()
+	if err != nil {
+		log.Printf("Error getting task list from taskDB: %v\n", err)
+		return
+	}
+	taskList, ok := result.([]*task.Task)
+	if !ok {
+		log.Printf("Unable to convert %v to []task.Task type\n", result)
+		return
+	}
+	for _, t := range taskList {
 		if t.State != task.Running {
 			continue
 		}
@@ -144,15 +198,18 @@ func (w *Worker) updateTasks() {
 			continue
 		}
 		if resp.Container == nil {
-			log.Printf("No container for running task %s\n", id)
-			w.Db[id].State = task.Failed
+			log.Printf("No container for running task %s\n", t.ID)
+			t.State = task.Failed
+			w.Db.Put(t.ID.String(), t)
 			continue
 		}
 		if resp.Container.State.Status == "exited" {
-			log.Printf("Container for task %s in non-running state %s", id, resp.Container.State.Status)
-			w.Db[id].State = task.Failed
+			log.Printf("Container for task %s in non-running state %s", t.ID, resp.Container.State.Status)
+			t.State = task.Failed
+			w.Db.Put(t.ID.String(), t)
 			continue
 		}
-		w.Db[id].HostPorts = resp.Container.NetworkSettings.Ports
+		t.HostPorts = resp.Container.NetworkSettings.Ports
+		w.Db.Put(t.ID.String(), t)
 	}
 }
