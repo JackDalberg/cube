@@ -30,10 +30,12 @@ func (a *Api) initRouter() {
 	a.Router.HandleFunc("DELETE /tasks/{taskID}", a.StopTaskHandler)
 }
 
+// Runs in its own goroutine.
 func (a *Api) Start() {
 	a.initRouter()
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
-	log.Printf("Error starting manager api: %v", err)
+	log.Fatalf("Error starting manager api: %v",
+		http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router),
+	)
 }
 
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +56,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.Manager.AddTask(te)
-	log.Printf("Added task %v\n", te.Task.ID)
+	log.Printf("Added task to manager %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
 }
@@ -68,16 +70,9 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tID, _ := uuid.Parse(taskID)
-	result, err := a.Manager.TaskDb.Get(tID.String())
+	taskToStop, err := a.Manager.TaskDb.Get(tID.String())
 	if err != nil {
 		log.Printf("No task with ID %v found: %v\n", tID, err)
-		w.WriteHeader(404)
-		return
-	}
-
-	taskToStop, ok := result.(*task.Task)
-	if !ok {
-		log.Printf("Unable to convert %v to task.Task type\n", result)
 		w.WriteHeader(404)
 		return
 	}

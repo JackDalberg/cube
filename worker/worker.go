@@ -8,20 +8,18 @@ import (
 	"fmt"
 	"log"
 	"time"
-
-	"github.com/golang-collections/collections/queue"
 )
 
 type Worker struct {
 	Name      string
-	Queue     queue.Queue
-	Db        store.Store
+	Queue     store.Queue[task.Task]
+	Db        store.Store[task.Task]
 	TaskCount int
 	Stats     *stats.Stats
 }
 
 func New(name, taskDBType string) *Worker {
-	var s store.Store
+	var s store.Store[task.Task]
 	var err error
 	switch taskDBType {
 	case "memory":
@@ -33,15 +31,16 @@ func New(name, taskDBType string) *Worker {
 		s = store.NewInMemoryTaskStore()
 	}
 	if err != nil {
-		log.Printf("Unable to create task store for worker %s: %v", name, err)
+		log.Fatalf("Unable to create task store for worker %s: %v", name, err)
 	}
 	return &Worker{
 		Name:  name,
-		Queue: *queue.New(),
 		Db:    s,
+		Queue: &store.TaskQueue{},
 	}
 }
 
+// Runs in its own goroutine.
 func (w *Worker) CollectStats() {
 	for {
 		log.Printf("Collecting stats")
@@ -51,6 +50,7 @@ func (w *Worker) CollectStats() {
 	}
 }
 
+// Runs in its own goroutine.
 func (w *Worker) RunTasks() {
 	for {
 		if w.Queue.Len() != 0 {
@@ -66,31 +66,32 @@ func (w *Worker) RunTasks() {
 	}
 }
 
+// TODO(jack): Rewrite to be more intuitive to reason through.
 func (w *Worker) runTask() task.DockerResult {
-	t := w.Queue.Dequeue()
-	if t == nil {
+	if w.Queue.Len() == 0 {
 		log.Printf("No tasks in the queue\n")
 		return task.DockerResult{Error: nil}
 	}
-	taskQueued := t.(task.Task)
+	taskQueued := w.Queue.Dequeue()
+	err := w.Db.Put(taskQueued.ID.String(), &taskQueued)
+	if err != nil {
+		log.Printf("Unable to store task with ID %v\n", taskQueued.ID.String())
+		return task.DockerResult{Error: err}
+	}
 
-	res, err := w.Db.Get(taskQueued.ID.String())
+	taskPersisted, err := w.Db.Get(taskQueued.ID.String())
 	if err != nil {
 		log.Printf("Unable to find task with ID %v\n", taskQueued.ID.String())
 		return task.DockerResult{Error: err}
 	}
 
-	taskPersisted, ok := res.(*task.Task)
-	if !ok {
-		log.Printf("Unable to convert %v to task.Task type\n", res)
-		return task.DockerResult{Error: nil}
-
-	}
 	if taskPersisted == nil {
 		taskPersisted = &taskQueued
 		w.Db.Put(taskQueued.ID.String(), &taskQueued)
 	}
 
+	// TODO(jack): As of now, we are seeing whether or not the task can transition to
+	// its current state. Should be more clear with the flow here
 	var result task.DockerResult
 	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
 		switch taskQueued.State {
@@ -146,14 +147,9 @@ func (w *Worker) AddTask(t task.Task) {
 
 func (w *Worker) GetTasks() []task.Task {
 	var allTasks []task.Task
-	result, err := w.Db.List()
+	taskList, err := w.Db.List()
 	if err != nil {
 		log.Printf("Error getting task list from taskDB: %v\n", err)
-		return nil
-	}
-	taskList, ok := result.([]*task.Task)
-	if !ok {
-		log.Printf("Unable to convert %v to []task.Task type\n", result)
 		return nil
 	}
 	for _, v := range taskList {
@@ -168,6 +164,7 @@ func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
 	return d.Inspect(t.ContainerID)
 }
 
+// Runs in its own goroutine.
 func (w *Worker) UpdateTasks() {
 	for {
 		log.Println("Checking status of tasks")
@@ -178,14 +175,9 @@ func (w *Worker) UpdateTasks() {
 }
 
 func (w *Worker) updateTasks() {
-	result, err := w.Db.List()
+	taskList, err := w.Db.List()
 	if err != nil {
 		log.Printf("Error getting task list from taskDB: %v\n", err)
-		return
-	}
-	taskList, ok := result.([]*task.Task)
-	if !ok {
-		log.Printf("Unable to convert %v to []task.Task type\n", result)
 		return
 	}
 	for _, t := range taskList {

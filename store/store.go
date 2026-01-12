@@ -10,10 +10,10 @@ import (
 	"github.com/boltdb/bolt"
 )
 
-type Store interface {
-	Put(key string, value any) error
-	Get(key string) (any, error)
-	List() (any, error)
+type Store[T any] interface {
+	Put(key string, value *T) error
+	Get(key string) (*T, error)
+	List() ([]*T, error)
 	Count() (int, error)
 }
 
@@ -21,7 +21,7 @@ type InMemoryTaskStore struct {
 	Db map[string]*task.Task
 }
 
-var _ Store = (*InMemoryTaskStore)(nil)
+var _ Store[task.Task] = (*InMemoryTaskStore)(nil)
 
 func NewInMemoryTaskStore() *InMemoryTaskStore {
 	return &InMemoryTaskStore{
@@ -29,16 +29,12 @@ func NewInMemoryTaskStore() *InMemoryTaskStore {
 	}
 }
 
-func (i *InMemoryTaskStore) Put(key string, value any) error {
-	t, ok := value.(*task.Task)
-	if !ok {
-		return fmt.Errorf("value %v is not a task.Task type", value)
-	}
-	i.Db[key] = t
+func (i *InMemoryTaskStore) Put(key string, value *task.Task) error {
+	i.Db[key] = value
 	return nil
 }
 
-func (i *InMemoryTaskStore) Get(key string) (any, error) {
+func (i *InMemoryTaskStore) Get(key string) (*task.Task, error) {
 	t, ok := i.Db[key]
 	if !ok {
 		return nil, fmt.Errorf("task.Task with key %v does not exist", key)
@@ -46,7 +42,7 @@ func (i *InMemoryTaskStore) Get(key string) (any, error) {
 	return t, nil
 }
 
-func (i *InMemoryTaskStore) List() (any, error) {
+func (i *InMemoryTaskStore) List() ([]*task.Task, error) {
 	var tasks []*task.Task
 	for _, t := range i.Db {
 		tasks = append(tasks, t)
@@ -62,7 +58,7 @@ type InMemoryTaskEventStore struct {
 	Db map[string]*task.TaskEvent
 }
 
-var _ Store = (*InMemoryTaskEventStore)(nil)
+var _ Store[task.TaskEvent] = (*InMemoryTaskEventStore)(nil)
 
 func NewInMemoryTaskEventStore() *InMemoryTaskEventStore {
 	return &InMemoryTaskEventStore{
@@ -70,16 +66,12 @@ func NewInMemoryTaskEventStore() *InMemoryTaskEventStore {
 	}
 }
 
-func (i *InMemoryTaskEventStore) Put(key string, value any) error {
-	t, ok := value.(*task.TaskEvent)
-	if !ok {
-		return fmt.Errorf("value %v is not a task.TaskEvent type", value)
-	}
-	i.Db[key] = t
+func (i *InMemoryTaskEventStore) Put(key string, value *task.TaskEvent) error {
+	i.Db[key] = value
 	return nil
 }
 
-func (i *InMemoryTaskEventStore) Get(key string) (any, error) {
+func (i *InMemoryTaskEventStore) Get(key string) (*task.TaskEvent, error) {
 	t, ok := i.Db[key]
 	if !ok {
 		return nil, fmt.Errorf("task.TaskEvent with key %v does not exist", key)
@@ -87,7 +79,7 @@ func (i *InMemoryTaskEventStore) Get(key string) (any, error) {
 	return t, nil
 }
 
-func (i *InMemoryTaskEventStore) List() (any, error) {
+func (i *InMemoryTaskEventStore) List() ([]*task.TaskEvent, error) {
 	var tasks []*task.TaskEvent
 	for _, t := range i.Db {
 		tasks = append(tasks, t)
@@ -106,7 +98,7 @@ type BoltTaskStore struct {
 	Bucket   string
 }
 
-var _ Store = (*BoltTaskStore)(nil)
+var _ Store[task.Task] = (*BoltTaskStore)(nil)
 
 func NewBoltTaskStore(file, bucket string, mode os.FileMode) (*BoltTaskStore, error) {
 	db, err := bolt.Open(file, mode, nil)
@@ -127,10 +119,10 @@ func NewBoltTaskStore(file, bucket string, mode os.FileMode) (*BoltTaskStore, er
 	return &b, nil
 }
 
-func (b *BoltTaskStore) Put(key string, value any) error {
+func (b *BoltTaskStore) Put(key string, value *task.Task) error {
 	return b.Db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))
-		marshalled, err := json.Marshal(value.(*task.Task))
+		marshalled, err := json.Marshal(value)
 		if err != nil {
 			return err
 		}
@@ -139,7 +131,7 @@ func (b *BoltTaskStore) Put(key string, value any) error {
 	})
 }
 
-func (b *BoltTaskStore) Get(key string) (any, error) {
+func (b *BoltTaskStore) Get(key string) (*task.Task, error) {
 	var task task.Task
 	err := b.Db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))
@@ -147,8 +139,7 @@ func (b *BoltTaskStore) Get(key string) (any, error) {
 		if result == nil {
 			return fmt.Errorf("task %v not found", key)
 		}
-		err := json.Unmarshal(result, &task)
-		return err
+		return json.Unmarshal(result, &task)
 	})
 	if err != nil {
 		return nil, err
@@ -156,7 +147,7 @@ func (b *BoltTaskStore) Get(key string) (any, error) {
 	return &task, nil
 }
 
-func (b *BoltTaskStore) List() (any, error) {
+func (b *BoltTaskStore) List() ([]*task.Task, error) {
 	var tasks []*task.Task
 	err := b.Db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))
@@ -214,7 +205,7 @@ type BoltTaskEventStore struct {
 	Bucket   string
 }
 
-var _ Store = (*BoltTaskEventStore)(nil)
+var _ Store[task.TaskEvent] = (*BoltTaskEventStore)(nil)
 
 func NewBoltTaskEventStore(file, bucket string, mode os.FileMode) (*BoltTaskEventStore, error) {
 	db, err := bolt.Open(file, mode, nil)
@@ -235,19 +226,18 @@ func NewBoltTaskEventStore(file, bucket string, mode os.FileMode) (*BoltTaskEven
 	return &b, nil
 }
 
-func (b *BoltTaskEventStore) Put(key string, value any) error {
+func (b *BoltTaskEventStore) Put(key string, value *task.TaskEvent) error {
 	return b.Db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))
-		marshalled, err := json.Marshal(value.(*task.TaskEvent))
+		marshalled, err := json.Marshal(value)
 		if err != nil {
 			return err
 		}
-		err = bucket.Put([]byte(key), marshalled)
-		return err
+		return bucket.Put([]byte(key), marshalled)
 	})
 }
 
-func (b *BoltTaskEventStore) Get(key string) (any, error) {
+func (b *BoltTaskEventStore) Get(key string) (*task.TaskEvent, error) {
 	var event task.TaskEvent
 	err := b.Db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))
@@ -264,7 +254,7 @@ func (b *BoltTaskEventStore) Get(key string) (any, error) {
 	return &event, nil
 }
 
-func (b *BoltTaskEventStore) List() (any, error) {
+func (b *BoltTaskEventStore) List() ([]*task.TaskEvent, error) {
 	var events []*task.TaskEvent
 	err := b.Db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(b.Bucket))

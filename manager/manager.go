@@ -16,14 +16,13 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
 
 type Manager struct {
-	Pending       queue.Queue
-	TaskDb        store.Store
-	EventDb       store.Store
+	Pending       store.Queue[task.TaskEvent]
+	TaskDb        store.Store[task.Task]
+	EventDb       store.Store[task.TaskEvent]
 	Workers       []string
 	WorkerTaskMap map[string][]uuid.UUID
 	TaskWorkerMap map[uuid.UUID]string
@@ -54,7 +53,8 @@ func New(workers []string, schedulerType, dbType string) *Manager {
 	}
 
 	var tsErr, esErr error
-	var ts, es store.Store
+	var ts store.Store[task.Task]
+	var es store.Store[task.TaskEvent]
 	switch dbType {
 	case "memory":
 		ts = store.NewInMemoryTaskStore()
@@ -74,8 +74,8 @@ func New(workers []string, schedulerType, dbType string) *Manager {
 	}
 
 	return &Manager{
-		Pending:       *queue.New(),
 		Workers:       workers,
+		Pending:       &store.TaskEventQueue{},
 		TaskDb:        ts,
 		EventDb:       es,
 		WorkerTaskMap: workerTaskMap,
@@ -95,6 +95,7 @@ func (m *Manager) SelectWorker(t task.Task) (*node.Node, error) {
 	return m.Scheduler.Pick(scores, candidates), nil
 }
 
+// Runs in its own goroutine.
 func (m *Manager) UpdateTasks() {
 	for {
 		log.Println("Checking for tasks updates from workers")
@@ -118,8 +119,8 @@ func (m *Manager) updateTasks() {
 			continue
 		}
 
-		d := json.NewDecoder(resp.Body)
 		var tasks []*task.Task
+		d := json.NewDecoder(resp.Body)
 		err = d.Decode(&tasks)
 		if err != nil {
 			log.Printf("Error unmarshalling tasks: %s\n", err)
@@ -128,14 +129,9 @@ func (m *Manager) updateTasks() {
 
 		for _, t := range tasks {
 			log.Printf("Attempting to update task %v\n", t.ID)
-			result, err := m.TaskDb.Get(t.ID.String())
+			taskPersisted, err := m.TaskDb.Get(t.ID.String())
 			if err != nil {
 				log.Printf("[manager] %s\n", err)
-				continue
-			}
-			taskPersisted, ok := result.(*task.Task)
-			if !ok {
-				log.Printf("cannot convert result %v to task.Task type\n", result)
 				continue
 			}
 
@@ -156,8 +152,7 @@ func (m *Manager) SendWork() {
 		return
 	}
 
-	e := m.Pending.Dequeue()
-	te := e.(task.TaskEvent)
+	te := m.Pending.Dequeue()
 	err := m.EventDb.Put(te.ID.String(), &te)
 	if err != nil {
 		log.Printf("error putting %v into eventDB: %v\n", te, err)
@@ -168,15 +163,9 @@ func (m *Manager) SendWork() {
 
 	taskWorker, ok := m.TaskWorkerMap[te.Task.ID]
 	if ok {
-		result, err := m.TaskDb.Get(te.Task.ID.String())
+		taskPersisted, err := m.TaskDb.Get(te.Task.ID.String())
 		if err != nil {
 			log.Printf("error pulling task %v from taskDB: %v\n", te.Task.ID.String(), err)
-			return
-		}
-
-		taskPersisted, ok := result.(*task.Task)
-		if !ok {
-			log.Printf("cannot convert result %v to task.Task type\n", result)
 			return
 		}
 
@@ -243,18 +232,15 @@ func (m *Manager) AddTask(te task.TaskEvent) {
 }
 
 func (m *Manager) GetTasks() []*task.Task {
-	result, err := m.TaskDb.List()
+	taskList, err := m.TaskDb.List()
 	if err != nil {
 		log.Printf("Unable to list tasks: %v\n", err)
 		return nil
 	}
-	taskList, ok := result.([]*task.Task)
-	if !ok {
-		log.Printf("Error converting %v to []*task.Task\n", result)
-	}
 	return taskList
 }
 
+// Runs in its own goroutine.
 func (m *Manager) ProcessTasks() {
 	for {
 		log.Println("Processing any tasks in the queue")
@@ -264,6 +250,7 @@ func (m *Manager) ProcessTasks() {
 	}
 }
 
+// Runs in its own goroutine.
 func (m *Manager) DoHealthChecks() {
 	for {
 		log.Println("Performing task health check")
@@ -319,7 +306,6 @@ func (m *Manager) checkTaskHealth(t task.Task) error {
 }
 
 func (m *Manager) restartTask(t *task.Task) {
-	w := m.TaskWorkerMap[t.ID]
 	t.State = task.Scheduled
 	t.RestartCount++
 	err := m.TaskDb.Put(t.ID.String(), t)
@@ -335,15 +321,16 @@ func (m *Manager) restartTask(t *task.Task) {
 	}
 	data, err := json.Marshal(te)
 	if err != nil {
-		log.Printf("Unable to marshal task object: %v", t)
+		log.Printf("Unable to marshal task object: %v", te)
 		return
 	}
 
+	w := m.TaskWorkerMap[t.ID]
 	url := fmt.Sprintf("http://%s/tasks", w)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		log.Printf("Error connecting to %v: %v", w, err)
-		m.Pending.Enqueue(t)
+		log.Printf("Error connecting to %v: %v", url, err)
+		m.Pending.Enqueue(te)
 		return
 	}
 
@@ -365,7 +352,7 @@ func (m *Manager) restartTask(t *task.Task) {
 		fmt.Printf("Error decoding response: %s\n", err)
 		return
 	}
-	log.Printf("%#v\n", t)
+	log.Printf("Restarted task %#v\n", t)
 }
 
 func getHostPort(ports nat.PortMap) *string {
@@ -378,7 +365,7 @@ func getHostPort(ports nat.PortMap) *string {
 func (m *Manager) stopTask(worker, taskID string) {
 	var client http.Client
 	url := fmt.Sprintf("http://%s/tasks/%s", worker, taskID)
-	req, err := http.NewRequest("DELETE", url, nil)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		log.Printf("Error creating request to delete task %s: %v\n", taskID, err)
 		return

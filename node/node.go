@@ -33,24 +33,21 @@ func NewNode(name string, api string, role string) *Node {
 }
 
 func (n *Node) GetStats() (*stats.Stats, error) {
-	var resp *http.Response
-	var err error
-
 	url := fmt.Sprintf("%s/stats", n.Api)
-	resp, err = utils.HTTPWithRetry(http.Get, url)
+	resp, err := utils.HTTPWithRetry(http.Get, url)
 	if err != nil {
 		msg := fmt.Sprintf("Unable to connect to %v. Permanent failure.\n", n.Api)
 		log.Println(msg)
 		return nil, errors.New(msg)
 	}
 
+	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		msg := fmt.Sprintf("Error retrieving stats from %v: %v", n.Api, err)
 		log.Println(msg)
 		return nil, errors.New(msg)
 	}
 
-	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	var stats stats.Stats
 	err = json.Unmarshal(body, &stats)
@@ -60,6 +57,7 @@ func (n *Node) GetStats() (*stats.Stats, error) {
 		return nil, errors.New(msg)
 	}
 
+	log.Printf("[GetStats] Stats: %+v\n", stats)
 	if stats.MemStats == nil || stats.DiskStats == nil {
 		return nil, fmt.Errorf("error getting stats from node %s", n.Name)
 	}

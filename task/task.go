@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -25,6 +26,18 @@ const (
 	Completed
 	Failed
 )
+
+var stateTransitionMap = map[State][]State{
+	Pending:   {Scheduled},
+	Scheduled: {Scheduled, Running, Failed},
+	Running:   {Running, Completed, Failed},
+	Completed: {},
+	Failed:    {},
+}
+
+func ValidStateTransition(src, dst State) bool {
+	return slices.Contains(stateTransitionMap[src], dst)
+}
 
 type Task struct {
 	ID            uuid.UUID

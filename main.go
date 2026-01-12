@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"cube/manager"
 	"cube/worker"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 )
 
 func main() {
@@ -18,22 +21,30 @@ func main() {
 
 	fmt.Println("Starting cube workers")
 
-	w1 := worker.New("worker-1", "bolt")
+	w1 := worker.New("worker-1", "memory")
+	// w1 := worker.New("worker-1", "bolt")
 	wapi1 := worker.Api{Address: whost, Port: wport, Worker: w1}
-	w2 := worker.New("worker-2", "bolt")
+	w2 := worker.New("worker-2", "memory")
+	// w2 := worker.New("worker-2", "bolt")
 	wapi2 := worker.Api{Address: whost, Port: wport + 1, Worker: w2}
-	w3 := worker.New("worker-3", "bolt")
+	w3 := worker.New("worker-3", "memory")
+	// w3 := worker.New("worker-3", "bolt")
 	wapi3 := worker.Api{Address: whost, Port: wport + 2, Worker: w3}
 
-	// go w1.CollectStats()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go w1.CollectStats()
 	go w1.RunTasks()
 	go w1.UpdateTasks()
 	go wapi1.Start()
 
+	go w2.CollectStats()
 	go w2.RunTasks()
 	go w2.UpdateTasks()
 	go wapi2.Start()
 
+	go w3.CollectStats()
 	go w3.RunTasks()
 	go w3.UpdateTasks()
 	go wapi3.Start()
@@ -45,43 +56,16 @@ func main() {
 		fmt.Sprintf("%s:%d", whost, wport+1),
 		fmt.Sprintf("%s:%d", whost, wport+2),
 	}
-	m := manager.New(workers, "epvm", "bolt")
+	m := manager.New(workers, "epvm", "memory")
+	// m := manager.New(workers, "epvm", "bolt")
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()
 	go m.UpdateTasks()
 	go m.DoHealthChecks()
 
-	mapi.Start()
+	go mapi.Start()
 
-	// for i := range 3 {
-	// 	t := task.Task{
-	// 		ID:    uuid.New(),
-	// 		Name:  fmt.Sprintf("test-container-%d", i),
-	// 		State: task.Scheduled,
-	// 		Image: "strm/helloworld-http",
-	// 	}
-	// 	te := task.TaskEvent{
-	// 		ID:    uuid.New(),
-	// 		State: task.Running,
-	// 		Task:  t,
-	// 	}
-	// 	m.AddTask(te)
-	// 	m.SendWork()
-	// }
-
-	// go func() {
-	// 	for {
-	// 		fmt.Printf("[Manager] Updating tasks from %d workers\n", len(m.Workers))
-	// 		m.UpdateTasks()
-	// 		time.Sleep(15 * time.Second)
-	// 	}
-	// }()
-
-	// for {
-	// 	for _, t := range m.TaskDb {
-	// 		fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
-	// 		time.Sleep(15 * time.Second)
-	// 	}
-	// }
+	<-ctx.Done()
+	fmt.Println("\rCancelled program, shutting down gracefully now")
 }

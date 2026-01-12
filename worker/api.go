@@ -27,9 +27,11 @@ func (a *Api) initRouter() {
 	a.Router.HandleFunc("GET /tasks", a.GetTaskHandler)
 	a.Router.HandleFunc("POST /tasks", a.StartTaskHandler)
 	a.Router.HandleFunc("DELETE /tasks/{taskID}", a.StopTaskHandler)
+
 	a.Router.HandleFunc("GET /stats", a.GetStatsHandler)
 }
 
+// Runs in its own goroutine.
 func (a *Api) Start() {
 	a.initRouter()
 	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
@@ -67,15 +69,9 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tID, _ := uuid.Parse(taskID)
-	result, err := a.Worker.Db.Get(tID.String())
+	taskToStop, err := a.Worker.Db.Get(tID.String())
 	if err != nil {
 		log.Printf("No task with ID %v found\n", tID)
-		w.WriteHeader(404)
-		return
-	}
-	taskToStop, ok := result.(*task.Task)
-	if !ok {
-		log.Printf("Unable to convert %v to task.Task type\n", result)
 		w.WriteHeader(404)
 		return
 	}

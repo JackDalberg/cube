@@ -7,7 +7,7 @@ import (
 )
 
 func HTTPWithRetry(f func(string) (*http.Response, error), url string) (*http.Response, error) {
-	count := 10
+	count := 3
 	var resp *http.Response
 	var err error
 	for i := 0; i < count; i++ {
