@@ -5,7 +5,7 @@
         "State": 1,
         "ID": "bb1d59ef-9fc1-4e4b-a44d-db571eeed203",
         "Name": "test-chapter-9.1", 
-        "Image": "timboring/echo-server:latest",
+        "Image": "strm/helloworld-http",
         "ExposedPorts": {
             "7777/tcp": {}
         },

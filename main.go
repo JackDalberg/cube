@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"cube/cmd"
 	"cube/manager"
 	"cube/worker"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 )
 
 func main() {
+	cmd.Execute()
+	os.Exit(0)
 	// Ports 5556, 5557, 5558 in use
 	whost := os.Getenv("CUBE_WORKER_HOST")
 	wport, _ := strconv.Atoi(os.Getenv("CUBE_WORKER_PORT"))

@@ -11,6 +11,8 @@ require github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 
 require github.com/boltdb/bolt v1.3.1
 
+require github.com/spf13/pflag v1.0.10
+
 require (
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

@@ -27,6 +27,23 @@ const (
 	Failed
 )
 
+func (s State) String() string {
+	switch s {
+	case Pending:
+		return "Pending"
+	case Scheduled:
+		return "Scheduled"
+	case Running:
+		return "Running"
+	case Completed:
+		return "Completed"
+	case Failed:
+		return "Failed"
+	default:
+		return "Unknown state"
+	}
+}
+
 var stateTransitionMap = map[State][]State{
 	Pending:   {Scheduled},
 	Scheduled: {Scheduled, Running, Failed},

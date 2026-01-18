@@ -159,7 +159,7 @@ func (m *Manager) SendWork() {
 		m.Pending.Enqueue(te)
 		return
 	}
-	log.Printf("Pulled %v off pending queue\n", te)
+	log.Printf("Pulled %+v off pending queue\n", te)
 
 	taskWorker, ok := m.TaskWorkerMap[te.Task.ID]
 	if ok {

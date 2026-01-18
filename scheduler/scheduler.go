@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	// LIEB Ice constant. Something to do with graph theory or combinatorics.
+	// Idk how much the exact number matters tbh.
 	LIEB = 1.53960071783900203869
 )
 
@@ -81,8 +83,7 @@ func (e *Epvm) Score(t task.Task, nodes []*node.Node) map[string]float64 {
 		}
 		cpuUsage, err := calculateCpuUsage(node)
 		if err != nil {
-			log.Printf("Error calculating cpu usage for node %s: %v\n", node.Name, err)
-			cpuUsage = 1.0
+			log.Printf("Error calculating actual cpu usage for node %s: %v\n", node.Name, err)
 		}
 		// This asumes the max load of any node is 80%
 		cpuLoad := cpuUsage / math.Pow(2.0, 0.8)
@@ -120,12 +121,13 @@ func checkDisk(t task.Task, diskAvailable int) bool {
 func calculateCpuUsage(node *node.Node) (float64, error) {
 	stat1, err := node.GetStats()
 	if err != nil {
-		return -1.0, err
+		return 1.0, err
 	}
+	log.Printf("Stats for %s: %+v", node.Name, stat1)
 	time.Sleep(3 * time.Second)
 	stat2, err := node.GetStats()
 	if err != nil {
-		return -1.0, err
+		return 1.0, err
 	}
 
 	stat1Idle := stat1.CpuStats.Idle + stat1.CpuStats.IOWait
@@ -137,12 +139,12 @@ func calculateCpuUsage(node *node.Node) (float64, error) {
 	stat1Total := stat1Idle + stat1NonIdle
 	stat2Total := stat2Idle + stat2NonIdle
 
-	total := stat2Total - stat1Total
-	idle := stat2Idle - stat1Idle
+	total := stat2Total + stat1Total
+	idle := stat2Idle + stat1Idle
 
 	var cpuPercentUsage float64
 	if total == 0 && idle == 0 {
-		cpuPercentUsage = 0.00
+		cpuPercentUsage = 0.0
 	} else {
 		cpuPercentUsage = (float64(total) - float64(idle)) / float64(total)
 	}
